@@ -80,7 +80,7 @@ export function TableInstance({ userList, isLoading, handleDelete }: UserTablePr
                     className="h-10 w-10 rounded-full object-cover"
                   />
                 </TableCell>
-                <TableCell className="font-medium">{user.firstName}</TableCell>
+                <TableCell className="font-medium">{user?.lastName} {user?.firstName}</TableCell>
                 <TableCell className="hidden md:table-cell">{user.email}</TableCell>
                 <TableCell className="hidden md:table-cell">
                   {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : ""}
