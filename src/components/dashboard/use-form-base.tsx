@@ -1,14 +1,12 @@
 "use client"
 
 import type React from "react"
-
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { Loader2, Upload } from "lucide-react"
-import { useMutation, gql } from "@apollo/client"
 
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -16,181 +14,122 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
-import Image from "next/image"
 
-const CREATE_USER = gql`
-  mutation createUser($input: CreateUserInput!) {
-    createUser(input: $input) {
-      firstName
-      lastName
-      email
-      role
-      avatar
-      status
+// Form schema for validation - we'll make password conditional based on role
+export const userFormSchema = z
+  .object({
+    firstName: z.string().min(2, { message: "FirstName must be at least 2 characters" }),
+    lastName: z.string().min(2, { message: "LastName must be at least 2 characters" }),
+    email: z.string().email({ message: "Please enter a valid email address" }),
+    role: z.string().min(1, { message: "Please select a role" }),
+    status: z.string().min(1, { message: "Please select a status" }),
+    password: z.string().optional(),
+  })
+  .refine(
+    (data) => {
+      // Only require password if role is admin
+      if (data.role === "admin" && (!data.password || data.password.length < 6)) {
+        return false
+      }
+      return true
+    },
+    {
+      message: "Password must be at least 6 characters for admin users",
+      path: ["password"],
+    },
+  )
+
+    export type UserFormValues = z.infer<typeof userFormSchema>
+
+    export interface User {
+        id: string
+        firstName: string
+        lastName: string
+        email: string
+        role: string
+        status?: string
+        avatar?: string | null
     }
-  }
-`
 
-const UPDATE_USER = gql`
-  mutation updateUser($id: ID!, $input: UpdateUserInput!) {
-    updateUser(id: $id, input: $input) {
-      id
-      firstName
-      lastName
-      email
-      role
-      avatar
-      status
+    interface UserFormBaseProps {
+        defaultValues: UserFormValues
+        onSubmit: (values: UserFormValues) => Promise<void>
+        submitButtonText: string
+        loadingText: string
+        initialAvatar?: string | null
+        isEditMode?: boolean
     }
-  }
-`
 
-const formSchema = z.object({
-  firstName: z.string().min(2, { message: "FirstName must be at least 2 characters" }),
-  lastName: z.string().min(2, { message: "LastName must be at least 2 characters" }),
-  email: z.string().email({ message: "Please enter a valid email address" }),
-  role: z.string().min(1, { message: "Please select a role" }),
-  status: z.string().min(1, { message: "Please select a status" }),
-})
-
-interface User {
-  id: string
-  firstName: string
-  lastName: string
-  email: string
-  role: string
-  status?: string
-  avatar?: string | null
-}
-
-interface UserFormProps {
-  getUser?: User | null
-}
-
-export function UserForm({ getUser }: UserFormProps) {
+export function UserFormBase({
+  defaultValues,
+  onSubmit,
+  submitButtonText,
+  loadingText,
+  initialAvatar = null,
+  isEditMode = false,
+}: UserFormBaseProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
-  const [avatar, setAvatar] = useState<string | null>(getUser?.avatar || null)
+  const [avatar, setAvatar] = useState<string | null>(initialAvatar)
+  const [selectedRole, setSelectedRole] = useState<string>(defaultValues.role || "")
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      firstName: getUser?.firstName || "",
-      lastName: getUser?.lastName || "",
-      email: getUser?.email || "",
-      role: getUser?.role || "",
-      status: getUser?.status || "",
-    },
+  const form = useForm<UserFormValues>({
+    resolver: zodResolver(userFormSchema),
+    defaultValues,
+    mode: "onChange", // Validate on change for better UX
   })
 
-  // Reset form when getUser changes
+  // Watch for role changes to update the selectedRole state
   useEffect(() => {
-    if (getUser) {
-      // console.log("getUser in effect:", getUser || "NO data");
-      form.reset({
-        firstName: getUser.firstName || "",
-        lastName: getUser.lastName || "",
-        email: getUser.email || "",
-        role: getUser.role || "",
-        status: getUser.status || "",
-      });
-    }
-  }, [getUser, form]);
+    const subscription = form.watch((value, { name }) => {
+      if (name === "role" && value.role) {
+        setSelectedRole(value.role as string)
+      }
+    })
 
-  const [createaUser] = useMutation(CREATE_USER, {
-    onCompleted: () => {
-      toast({
-        title: "User created",
-        description: "The user has been created successfully",
-      })
-      router.push("/dashboard/users")
-    },
-    onError: (error) => {
-      toast({
-        title: "Error creating user",
-        description: error.message,
-        variant: "destructive",
-      })
-      setIsLoading(false)
-    },
-  })
+    return () => subscription.unsubscribe()
+  }, [form.watch])
 
-  const [updateUser] = useMutation(UPDATE_USER, {
-    onCompleted: () => {
-      toast({
-        title: "User updated",
-        description: "The user has been updated successfully",
-      })
-      router.push("/dashboard/users")
-    },
-    onError: (error) => {
-      toast({
-        title: "Error updating user",
-        description: error.message,
-        variant: "destructive",
-      })
-      setIsLoading(false)
-    },
-  })
-
-  useEffect(() => {
-    console.log("Form errors", form.formState.errors);
-  }, [form.formState.errors]);
-  
-
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  async function handleSubmit(values: UserFormValues) {
     setIsLoading(true)
-    try {
-      const input = {
-        firstName: values.firstName,
-        lastName: values.lastName,
-        email: values.email,
-        role: values.role,
-        status: values.status,
-        avatar: avatar,
-      }
 
-      if (getUser) {
-        // Update existing user
-        await updateUser({
-          variables: {
-            id: getUser.id,
-            input,
-          },
-        })
-      } else {
-        // Create new user
-        await createaUser({
-          variables: { input },
-        })
-      }
+    try {
+      await onSubmit(values)
     } catch (error) {
       console.error("Error submitting form:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      })
+    } finally {
       setIsLoading(false)
     }
   }
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    //a demo for fileUpload
     const file = e.target.files?.[0]
     if (file) {
       // Create a preview URL
       URL.createObjectURL(file)
-      setAvatar(getUser?.avatar ?? null)
+      setAvatar(initialAvatar)
     }
   }
+
+  // Check if we should show the password field
+  const showPasswordField = selectedRole === "admin"
 
   return (
     <Card>
       <CardContent className="pt-6">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             <div className="flex flex-col items-center space-y-4 sm:flex-row sm:items-start sm:space-x-4 sm:space-y-0">
               <div className="relative">
                 <div className="h-24 w-24 overflow-hidden rounded-full border bg-muted">
                   {avatar ? (
-                    <Image width={100} height={100} src={avatar || "/placeholder.svg"} alt="Avatar" className="h-full! w-full! object-cover" />
+                    <img src={avatar || "/placeholder.svg"} alt="Avatar" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-muted-foreground">No image</div>
                   )}
@@ -260,7 +199,13 @@ export function UserForm({ getUser }: UserFormProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Role</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                      onValueChange={(value) => {
+                        field.onChange(value)
+                        setSelectedRole(value)
+                      }}
+                      defaultValue={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select role" />
@@ -271,7 +216,11 @@ export function UserForm({ getUser }: UserFormProps) {
                         <SelectItem value="user">User</SelectItem>
                       </SelectContent>
                     </Select>
-                    <FormDescription>The user role determines their permissions</FormDescription>
+                    <FormDescription>
+                      {selectedRole === "admin"
+                        ? "Admin users have full access and require a password"
+                        : "Regular users have limited access"}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -301,6 +250,28 @@ export function UserForm({ getUser }: UserFormProps) {
               />
             </div>
 
+            {/* Only show password field if role is admin */}
+            {showPasswordField && (
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{isEditMode ? "New Password (leave blank to keep current)" : "Password"}</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="Enter password" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {isEditMode
+                        ? "Only fill this if you want to change the password"
+                        : "Minimum 6 characters required for admin users"}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <div className="flex justify-end space-x-4">
               <Button type="button" variant="outline" onClick={() => router.push("/dashboard/users")}>
                 Cancel
@@ -309,12 +280,10 @@ export function UserForm({ getUser }: UserFormProps) {
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {getUser ? "Updating..." : "Creating..."}
+                    {loadingText}
                   </>
-                ) : getUser ? (
-                  "Update User"
                 ) : (
-                  "Create User"
+                  submitButtonText
                 )}
               </Button>
             </div>

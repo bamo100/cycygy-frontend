@@ -21,11 +21,11 @@ interface User {
 
 interface UserTableProps {
   userList: User[];
-  queryLoading: boolean;
+  isLoading: boolean;
   handleDelete: (id: string) => void;
 }
 
-export function TableInstance({ userList, queryLoading, handleDelete }: UserTableProps) {
+export function TableInstance({ userList, isLoading, handleDelete }: UserTableProps) {
   return (
     <div className="rounded-md border">
       <Table>
@@ -45,7 +45,7 @@ export function TableInstance({ userList, queryLoading, handleDelete }: UserTabl
           </TableRow>
         </TableHeader>
         <TableBody>
-          {queryLoading ? (
+          {isLoading ? (
             Array.from({ length: 5 }).map((_, index) => (
               <TableRow key={`loading-${index}`}>
                 <TableCell>

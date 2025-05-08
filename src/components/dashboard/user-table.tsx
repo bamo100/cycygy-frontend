@@ -1,22 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useMutation, gql, useQuery } from "@apollo/client"
+import { useMutation, gql, useLazyQuery } from "@apollo/client"
 import { useToast } from "@/hooks/use-toast"
 import { PaginationControls } from "./pagination"
 import { TableInstance } from "./table"
+import { UserSearchParams, UserTableSearch } from "./table-search"
 
 const GET_USERS = gql`
-  query getAllUsers($page: Int!, $limit: Int!) {
-    getAllUsers(page: $page, limit: $limit) {
-      users {
+  query getAllUsers($page: Int!, $limit: Int!, $searchTerm: String, $role: String, $status: String) {
+    getAllUsers(page: $page, limit: $limit, searchTerm: $searchTerm, role: $role, status: $status) {
+      data {
         id
-        lastName
         firstName
+        lastName
         email
         role
-        avatar
         status
+        avatar
       }
       pagination {
         total
@@ -38,8 +39,8 @@ const DELETE_USER = gql`
 
 interface User {
   id: string
-  lastName: string;
-  firstName: string;
+  lastName: string
+  firstName: string
   email: string
   role: string
   status: string
@@ -54,7 +55,7 @@ interface Pagination {
 }
 
 interface UsersData {
-  users: User[]
+  data: User[]
   pagination: Pagination
 }
 
@@ -65,16 +66,36 @@ interface UserTableProps {
 
 export function UserTable({ initialData }: UserTableProps) {
   const { toast } = useToast()
-  const [page, setPage] = useState(initialData?.pagination?.page || 1)
-  const [userList, setUserList] = useState<User[]>(initialData?.users || [])
+  const defaultLimit = 10
+
+  const [page, setPage] = useState(initialData?.pagination.page || 1)
+  const [userList, setUserList] = useState<User[]>(initialData?.data || [])
+  const [searchParams, setSearchParams] = useState<UserSearchParams>({})
   const [pagination, setPagination] = useState<Pagination>(
     initialData?.pagination || {
       total: 0,
       pages: 0,
       page: 1,
-      limit: 10,
-    },
+      limit: defaultLimit,
+    }
   )
+
+  const [getUsers, { loading, data }] = useLazyQuery(GET_USERS, {
+    fetchPolicy: "network-only",
+    onCompleted: (data) => {
+      if (data?.getAllUsers) {
+        setUserList(data.getAllUsers.data || [])
+        setPagination(data.getAllUsers.pagination)
+      }
+    },
+    onError: (error) => {
+      toast({
+        title: "Error fetching users",
+        description: error.message,
+        variant: "destructive",
+      })
+    },
+  })
 
   const [deleteUser] = useMutation(DELETE_USER, {
     onCompleted: (data) => {
@@ -84,13 +105,10 @@ export function UserTable({ initialData }: UserTableProps) {
           description: "The user has been deleted successfully",
         })
 
-        // Remove user from the list
-        setUserList(userList.filter((user) => user.id !== data.deleteUser.id))
+        setUserList((prev) => prev.filter((user) => user.id !== data.deleteUser.id))
 
-        // If the page is now empty and it's not the first page, go to the previous page
-        if (userList.length === 1 && page > 1) {
-          setPage(page - 1)
-        }
+        const shouldGoToPreviousPage = userList.length === 1 && page > 1
+        setPage(shouldGoToPreviousPage ? page - 1 : page)
       }
     },
     onError: (error) => {
@@ -102,57 +120,56 @@ export function UserTable({ initialData }: UserTableProps) {
     },
   })
 
-  // Update state when props change
-  useEffect(() => {
-    if (initialData) {
-      setUserList(initialData.users || [])
-      setPagination(
-        initialData.pagination || {
-          total: 0,
-          pages: 0,
-          page: 1,
-          limit: 10,
-        },
-      )
-    }
-  }, [initialData])
-
-  const handleDelete = (id: string) => {
-    deleteUser({
-      variables: { id },
+  const fetchUsers = (currentPage: number, filters: UserSearchParams) => {
+    getUsers({
+      variables: {
+        page: currentPage,
+        limit: defaultLimit,
+        ...filters,
+      },
     })
   }
 
-  const { data, loading: queryLoading, refetch } = useQuery(GET_USERS, {
-    variables: { page, limit: pagination.limit },
-    fetchPolicy: 'network-only',
-  });
+  useEffect(() => {
+    fetchUsers(page, searchParams)
+  }, [page, searchParams])
+
+  const handleDelete = (id: string) => {
+    deleteUser({ variables: { id } })
+  }
+
+  const handleSearch = (params: UserSearchParams) => {
+    //setPage(1)
+    setSearchParams(params)
+  }
 
   const handlePageChange = (newPage: number) => {
-    setUserList(data?.getAllUsers.users || []);
+   //setUserList(data?.getAllUsers.data || []);
     setPage(newPage);
-    refetch({ page: newPage, limit: pagination.limit });
-  };
+    //refetch({ page: newPage, limit: pagination.limit });
+  }
 
-  // Update userList when data changes
+  //Update userList when data changes
   useEffect(() => {
     if (data?.getAllUsers) {
-      setUserList(data.getAllUsers.users || []);
+      setUserList(data.getAllUsers.data || []);
       setPagination(data.getAllUsers.pagination);
     }
   }, [data]);
 
+  const isLoading = loading || (!initialData && userList.length === 0)
 
   return (
     <div className="space-y-4">
-      <TableInstance userList={userList} queryLoading={queryLoading} handleDelete={handleDelete} />
+      <UserTableSearch onSearch={handleSearch} />
 
-      {/* Pagination */}
+      <TableInstance userList={userList} isLoading={isLoading} handleDelete={handleDelete} />
+
       {pagination.pages > 1 && (
         <PaginationControls
           page={page}
           pages={pagination.pages}
-          loading={queryLoading}
+          loading={loading}
           onPageChange={handlePageChange}
         />
       )}

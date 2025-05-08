@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { UserForm } from "@/components/dashboard/user-form"
+import { CreateUserForm } from "@/components/dashboard/create-user-form"
 
 export const metadata: Metadata = {
   title: "Add User",
@@ -11,7 +11,7 @@ export default function NewUserPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Add User" description="Create a new user account" />
-      <UserForm />
+      <CreateUserForm />  
     </div>
   )
 }

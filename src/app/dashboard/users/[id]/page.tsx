@@ -3,9 +3,9 @@
 import { useEffect } from "react"
 import { useQuery, gql } from "@apollo/client"
 import { PageHeader } from "@/components/dashboard/page-header"
-import { UserForm } from "@/components/dashboard/user-form"
 import { useToast } from "@/hooks/use-toast"
 import { use } from 'react';
+import { UpdateUserForm } from "@/components/dashboard/update-use-form"
 
 const GET_USER = gql`
   query getUser($id: String!) {
@@ -33,7 +33,6 @@ export default function EditUserPage({ params }: { params: Promise<Params> }) {
   })
 
   useEffect(() => {
-    // console.log("data", data)
     if (error) {
       toast({
         title: "Error fetching user",
@@ -50,7 +49,7 @@ export default function EditUserPage({ params }: { params: Promise<Params> }) {
   return (
     <div className="space-y-6">
       <PageHeader title="Edit User" description="Update user information" />
-      <UserForm getUser={data.getUser} />
+      <UpdateUserForm user={data.getUser} />
     </div>
   )
 }

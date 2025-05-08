@@ -13,14 +13,14 @@ import { useToast } from "@/hooks/use-toast"
 const GET_USERS = gql`
   query getAllUsers($page: Int!, $limit: Int!) {
     getAllUsers(page: $page, limit: $limit) {
-      users {
+      data {
         id
-        lastName
         firstName
+        lastName
         email
         role
-        avatar
         status
+        avatar
       }
       pagination {
         total
